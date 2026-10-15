@@ -63,6 +63,7 @@ typedef struct {
     uint8_t note[BB_NUM_VOICES];     /* output note per voice                */
     uint8_t note_map;                /* 0 = gm, 1 = drumrack (36..51)         */
     uint8_t swing;                   /* 0..100, delays off-beat 16ths         */
+    int8_t  transpose;               /* -24..+24 semitones, NOT saved in state */
 
     uint8_t cur_step;
     uint8_t clock_running;           /* Move transport running               */
@@ -153,6 +154,7 @@ static int fire_step(BeatBankInstance *bi, uint8_t out_msgs[][3], int out_lens[]
         const char *row = p->rows[v];
         PendingNoteOff *pn = &bi->pending[v];
         uint8_t vel;
+        int out_note;
         if (pn->active) {
             count = emit((uint8_t)(MIDI_NOTE_OFF | OUT_CHANNEL), pn->note, 0, out_msgs, out_lens, max_out, count);
             pn->active = 0;
@@ -162,9 +164,14 @@ static int fire_step(BeatBankInstance *bi, uint8_t out_msgs[][3], int out_lens[]
         if (step >= (uint8_t)strlen(row)) continue;
         vel = bb_char_velocity(row[step]);
         if (vel == 0) continue;
-        count = emit((uint8_t)(MIDI_NOTE_ON | OUT_CHANNEL), bi->note[v], vel, out_msgs, out_lens, max_out, count);
+        /* Transpose is applied here only; the pending note-off remembers the
+         * note actually sent, so changing transpose mid-gate can't strand one.
+         * Notes pushed outside 0..127 are dropped rather than clamped. */
+        out_note = (int)bi->note[v] + bi->transpose;
+        if (out_note < 0 || out_note > 127) continue;
+        count = emit((uint8_t)(MIDI_NOTE_ON | OUT_CHANNEL), (uint8_t)out_note, vel, out_msgs, out_lens, max_out, count);
         if (count >= max_out) return count;
-        pn->active = 1; pn->note = bi->note[v]; pn->clocks_left = GATE_CLOCKS;
+        pn->active = 1; pn->note = (uint8_t)out_note; pn->clocks_left = GATE_CLOCKS;
     }
     bi->cur_step = (uint8_t)((step + 1) % steps);
     return count;
@@ -311,6 +318,7 @@ static void bb_set_param(void *instance, const char *key, const char *val)
         return;
     }
     if (strcmp(key, "swing") == 0) { bi->swing = (uint8_t)parse_int(val, 0, 100, 0); return; }
+    if (strcmp(key, "transpose") == 0) { bi->transpose = (int8_t)parse_int(val, -24, 24, 0); return; }
     if (strcmp(key, "note_map") == 0) {
         int m;
         if (strcmp(val, "gm") == 0)            m = 0;
@@ -372,6 +380,7 @@ static int bb_get_param(void *instance, const char *key, char *buf, int buf_len)
     if (strcmp(key, "preview_rev") == 0)   return snprintf(buf, buf_len, "%u", bi->preview_revision);
     if (strcmp(key, "note_map") == 0)      return snprintf(buf, buf_len, "%s", bi->note_map ? "drumrack" : "gm");
     if (strcmp(key, "swing") == 0)         return snprintf(buf, buf_len, "%u", bi->swing);
+    if (strcmp(key, "transpose") == 0)     return snprintf(buf, buf_len, "%d", bi->transpose);
     if (strcmp(key, "state") == 0) {
         int off = snprintf(buf, buf_len,
             "{\"pattern\":%d,\"swing\":%u,\"note_map\":\"%s\",\"notes\":[",

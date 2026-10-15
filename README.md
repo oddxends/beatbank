@@ -132,6 +132,7 @@ Each voice knob shows its short name and the pad (`p1`…`p16`) it drives.
 | **Jog-click**       | Open the pattern list; click again to select                     |
 | **Touch K1–6 or K8** | Open that knob's scrollable choice list; release to pick          |
 | **Shift + jog-click** | Open the Note Map choice list                                   |
+| **◀ / ▶ arrows**     | Transpose all output notes down / up one semitone (±24, shown as `TR±n`) |
 | **Back**            | Cancel the pattern list, or exit the Pattern view                |
 
 **Positional pads.** Knob 1 always edits the top row, Knob 2 the next, and so on.
@@ -139,6 +140,15 @@ Voices appear in a fixed order (kick, snare, hats, then extras), so a voice keep
 its pad across patterns — only *which* knob reaches it shifts with what the
 current pattern plays. Pad edits **persist with the slot** (switching Note Map
 resets them to the map defaults).
+
+**Transpose.** The Left/Right arrows shift every note Beat Bank sends by a
+semitone, from −24 to +24. On a drum kit this moves each voice to a different
+pad (nothing wraps; notes beyond 0–127 are dropped). Transpose is **not saved**
+with the slot — it starts at 0 each time the module loads. The arrows only
+work while the Pattern view is open.
+
+**Knob feel.** Knobs 1–7 move one value step per 6 detents of travel, so small
+nudges don't jump pads or swing.
 
 **Tempo & feel.** Beat Bank follows Move's transport (silent when stopped) and
 plays straight. Swing is the only groove control — it's deterministic and works

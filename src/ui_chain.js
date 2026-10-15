@@ -9,13 +9,19 @@ const VOICES = [
   ['TOM', 'tom_note'], ['RID', 'ride_note'], ['CRS', 'crash_note'],
   ['CWB', 'cowbell_note'], ['CNG', 'conga_note'], ['PRC', 'perc_note'],
 ];
-const g = { count: 1, pattern: 0, steps: 16, name: '', genre: '', swing: 0,
+/* Knob travel per value step for the direct edits on knobs 1-7. 1:1 was far
+ * too twitchy; 6 matches list_knob's DETENTS_PER_ENTRY used by the pickers. */
+const KNOB_DETENTS = 6;
+const CC_LEFT = 62, CC_RIGHT = 63;
+const TRANSPOSE_MIN = -24, TRANSPOSE_MAX = 24;
+const g = { count: 1, pattern: 0, steps: 16, name: '', genre: '', swing: 0, transpose: 0,
   drumrack: true, rows: [], notes: [], genres: [], rev: -1 };
 let picker = null;
 let pickerKnob = listKnobInit();
 let touched = -1;
 let shift = false;
 let genreTravel = 0;
+const knobTravel = [0, 0, 0, 0, 0, 0, 0];
 let dirty = true;
 let framesSinceDraw = 0;
 
@@ -61,6 +67,7 @@ function refresh(force = false) {
   }
   if (!g.genres.length) g.genres = parseGenres(get('genre_list'));
   g.swing = number('swing', g.swing);
+  g.transpose = number('transpose', g.transpose);
   g.drumrack = get('note_map') !== 'gm';
   for (let i = 0; i < VOICES.length; i++) g.notes[i] = number(VOICES[i][1], g.notes[i] || 36);
   dirty = true;
@@ -86,6 +93,20 @@ function moveGenre(delta) {
   const i = ((genreIndex() + delta) % g.genres.length + g.genres.length) % g.genres.length;
   pattern(g.genres[i].start);
 }
+/* Accumulate raw detents; return +/-1 once a knob has travelled KNOB_DETENTS. */
+function knobStep(knob, delta) {
+  if (Math.sign(delta) !== Math.sign(knobTravel[knob])) knobTravel[knob] = 0;
+  knobTravel[knob] += delta;
+  if (Math.abs(knobTravel[knob]) < KNOB_DETENTS) return 0;
+  const step = Math.sign(knobTravel[knob]);
+  knobTravel[knob] = 0;
+  return step;
+}
+function transpose(delta) {
+  const next = clamp(g.transpose + delta, TRANSPOSE_MIN, TRANSPOSE_MAX);
+  if (next !== g.transpose) { g.transpose = next; set('transpose', next); }
+}
+function transposeLabel() { return 'TR' + (g.transpose > 0 ? '+' : '') + g.transpose; }
 function editNote(knob, delta) {
   const voice = usedVoices()[knob];
   if (voice === undefined) return;
@@ -148,9 +169,13 @@ function drawGrid() {
   for (let i = 0; i < 4; i++) drawKnob(i, 0, used);
   fill_rect(0, 15, 128, 1, 1);
   const ge = g.genres[genreIndex()] || { start: 0, count: g.count };
-  mini(1, 17, fit(g.name || 'PATTERN', 100));
   const pos = (g.pattern - ge.start + 1) + '/' + ge.count;
-  mini(127 - fontWidth4x5(pos), 17, pos);
+  const posX = 127 - fontWidth4x5(pos);
+  const tr = transposeLabel();
+  const trX = posX - 5 - fontWidth4x5(tr);
+  mini(1, 17, fit(g.name || 'PATTERN', trX - 4));
+  mini(trX, 17, tr);
+  mini(posX, 17, pos);
   const visible = Math.min(6, used.length);
   const stepW = 126 / g.steps;
   for (let r = 0; r < visible; r++) {
@@ -208,6 +233,10 @@ function midi(data) {
   }
   if (type !== 0xB0) return;
   if (a === 49) { shift = b > 0; return; }
+  if (a === CC_LEFT || a === CC_RIGHT) {
+    if (b > 0 && !picker) transpose(a === CC_RIGHT ? 1 : -1);
+    return;
+  }
   if (a === 3 && b > 0) { if (picker) choose(); else openList(shift ? -2 : touched >= 0 ? touched : -1); return; }
   const delta = decode(b);
   if (!delta) return;
@@ -221,8 +250,14 @@ function midi(data) {
     return;
   }
   if (a === 14) { (shift ? moveGenre : movePattern)(Math.sign(delta)); return; }
-  if (a >= 71 && a <= 76) { editNote(a - 71, Math.sign(delta)); return; }
-  if (a === 77) { const next = clamp(g.swing + Math.sign(delta) * 5, 0, 100); if (next !== g.swing) { g.swing = next; set('swing', next); } return; }
+  if (a >= 71 && a <= 77) {
+    const step = knobStep(a - 71, delta);
+    if (!step) return;
+    if (a <= 76) { editNote(a - 71, step); return; }
+    const next = clamp(g.swing + step * 5, 0, 100);
+    if (next !== g.swing) { g.swing = next; set('swing', next); }
+    return;
+  }
   if (a === 78) {
     if (Math.sign(delta) !== Math.sign(genreTravel)) genreTravel = 0;
     genreTravel += Math.sign(delta);
@@ -230,7 +265,7 @@ function midi(data) {
   }
 }
 globalThis.chain_ui = {
-  init() { g.genres = []; picker = null; touched = -1; shift = false; genreTravel = 0; refresh(true); },
+  init() { g.genres = []; picker = null; touched = -1; shift = false; genreTravel = 0; knobTravel.fill(0); refresh(true); },
   tick() { if (dirty || ++framesSinceDraw >= 12) draw(); },
   onMidiMessageInternal: midi,
   handleBack() { if (!picker) return false; picker = null; dirty = true; return true; },
