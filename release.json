@@ -4,5 +4,5 @@
     "description": "Library of standard drum patterns (lofi, dnb, bossa, house, techno) \u2014 no randomness, just load and play.",
     "component_type": "midi_fx",
     "version": "0.1.7",
-    "download_url": "https://github.com/oddxends/beatbank/releases/download/v0.1.7/beatbank-module.tar.gz"
+    "download_url": "https://raw.githubusercontent.com/oddxends/beatbank/main/release/beatbank-module.tar.gz"
 }
