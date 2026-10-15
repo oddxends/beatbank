@@ -154,7 +154,42 @@ int main(void)
           "restored state matches (pattern 1, swing 40, drumrack)");
     api->get_param(inst2, "kick_note", buf, sizeof(buf));
     CHECK(atoi(buf) == 41, "per-voice pad edit persists through state");
+    api->get_param(inst, "state", st, sizeof(st));
+    CHECK(strstr(st, "transpose") == NULL, "transpose is not part of saved state");
     api->destroy_instance(inst2);
+
+    printf("\nTranspose shifts output notes, clamps to +/-24, not saved\n");
+    api->set_param(inst, "pattern", "1");       /* Backbeat: snare 38 at 24,72 */
+    api->set_param(inst, "swing", "0");
+    api->set_param(inst, "note_map", "drumrack");
+    api->set_param(inst, "transpose", "1");
+    int nt = run_bar(api, inst, 39, clk, 64, 90);
+    CHECK(nt == 2 && clk[0] == 24, "transpose +1: snare 38 -> 39");
+    api->set_param(inst, "transpose", "-2");
+    nt = run_bar(api, inst, 36, clk, 64, 90);
+    CHECK(nt == 2, "transpose -2: snare 38 -> 36");
+    api->set_param(inst, "transpose", "99");
+    api->get_param(inst, "transpose", buf, sizeof(buf));
+    CHECK(atoi(buf) == 24, "transpose clamps to +24");
+    api->set_param(inst, "transpose", "-99");
+    api->get_param(inst, "transpose", buf, sizeof(buf));
+    CHECK(atoi(buf) == -24, "transpose clamps to -24");
+    api->get_param(inst, "state", st, sizeof(st));
+    inst2 = api->create_instance(MODROOT, NULL);
+    api->set_param(inst2, "state", st);
+    api->get_param(inst2, "transpose", buf, sizeof(buf));
+    CHECK(atoi(buf) == 0, "restored instance starts at transpose 0");
+    api->destroy_instance(inst2);
+
+    printf("\nNote-off matches the transposed note even if transpose changes mid-gate\n");
+    api->set_param(inst, "transpose", "5");
+    b = 0xFA; api->process_midi(inst, &b, 1, out, lens, MIDI_FX_MAX_OUT_MSGS); /* kick 36+5=41 on */
+    api->set_param(inst, "transpose", "0");
+    b = 0xFC; fn = api->process_midi(inst, &b, 1, out, lens, MIDI_FX_MAX_OUT_MSGS);
+    int off41 = 0;
+    for (int i = 0; i < fn; i++) if ((out[i][0] & 0xF0) == 0x80 && out[i][1] == 41) off41++;
+    CHECK(off41 == 1, "stop releases note 41, not the untransposed 36");
+    api->set_param(inst, "transpose", "0");
 
     api->destroy_instance(inst);
     if (failures) { printf("\nFAIL: %d check(s) failed\n", failures); return 1; }
